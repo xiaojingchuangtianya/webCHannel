@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>--房间:{{ room_name }}--</title>
+    <script src="{% static 'eruda.js' %}"></script>
+</head>
+<body>
+<h2 id="user_id">房间名:{{ room_name }},用户名:{{ request.user }}</h2>
+    <textarea id="chat-log" cols="100" rows="20"></textarea><br>
+    <input id="chat-message-input" type="text" size="100" ><br>
+    <input id="chat-message-submit" type="button" value="Send" onclick="sendMessage()">
+    <button onclick="createOffer()">开始视频</button>
+
+    <video id="yours" autoplay width="400px" height="300px"></video>
+    <video id="him" autoplay  width="400px" height="300px"></video>
+    {{ room_name|json_script:"room-name" }}
+
+<script>
+var websocket;
+//随机数
+function randomNum(minNum,maxNum){
+    switch(arguments.length){
+        case 1:
+            return parseInt(Math.random()*minNum+1,10);
+            break;
+        case 2:
+            return parseInt(Math.random()*(maxNum-minNum+1)+minNum,10);
+            break;
+        default:
+            return 0;
+            break;
+    }
+};
+var userid = 'user' + randomNum(0,100000);
+
+
+var yourVideo = document.getElementById("yours");
+var theirVideo = document.getElementById("him");
+var Connection;
+
+
+function startPeerConnection() {
+    //return;
+    var config;
+    config = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478?transport=udp' }
+        ],
+    };
+
+    Connection = new RTCPeerConnection(config);
+    Connection.onicecandidate = function(e) {
+        console.log('onicecandidate');
+        if (e.candidate) {
+            websocket.send(JSON.stringify({
+                "userid":userid,
+                "event": "_ice_candidate",
+                "data": {
+                    "candidate": e.candidate
+                }
+            }));
+        }
+    }
+    Connection.onaddstream = function(e) {
+        console.log('onaddstream');
+
+        //theirVideo.src = window.URL.createObjectURL(e.stream);
+        theirVideo.srcObject = e.stream;
+    }
+}
+
+
+createSocket();
+startPeerConnection();
+
+function f() {
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        .then(stream => {
+            yourVideo.srcObject = stream;
+            yourVideo.play();
+            window.stream = stream;
+            Connection.addStream(stream);
+        })
+        .catch(err => {
+            console.log(err);
+        })
+}
+
+
+function createOffer(){
+    //发送offer和answer的函数，发送本地session描述
+    Connection.createOffer()
+        .then(offer => {
+        Connection.setLocalDescription(offer);
+        websocket.send(JSON.stringify({
+            "event": "offer",
+            "data": {
+                "sdp": offer
+            }
+        }));
+    });
+}
+
+
+
+function createSocket(){
+    websocket = new WebSocket("ws://"+window.location.host+"/ws/chat/lin/");
+    eventBind();
+};
+function eventBind() {
+    //连接成功
+    websocket.onopen = function(e) {
+        console.log('连接成功')
+        websocket.send(JSON.stringify({"message":'{{request.user}}'+"已经登陆",data:null,event:null,userid:1}))
+    };
+    //server端请求关闭
+    websocket.onclose = function(e) {
+        console.log('关闭websocket')
+    };
+    //error
+    websocket.onerror = function(e) {
+        console.log("websocket出错")
+    };
+    //收到消息
+    websocket.onmessage = (event)=> {
+        if(event.data == "new user") {
+            location.reload();
+        } else {
+            var json = JSON.parse(event.data);
+            console.log('onmessage: ', json);
+            if(!json.userid && !json.event && !json.data){
+                document.getElementById("chat-log").value +='{{ request.user }}:'+json.message +"\n"
+            }
+            if(!json.event && !json.data && json.userid==1){
+                document.getElementById("chat-log").value +=json.message +"\n"
+            }
+            if(json.userid !=userid){
+                //如果是一个ICE的候选，则将其加入到PeerConnection中，否则设定对方的session描述为传递过来的描述
+                if(json.event === "_ice_candidate"&&json.data.candidate) {
+                    Connection.addIceCandidate(new RTCIceCandidate(json.data.candidate));
+                }else if(json.event ==='offer'){
+                    Connection.setRemoteDescription(json.data.sdp);
+                    Connection.createAnswer().then(answer => {
+                        Connection.setLocalDescription(answer);
+                        console.log(window.stream)
+                        websocket.send(JSON.stringify({
+                            "userid":userid,
+                            "event": "answer",
+                            "data": {
+                                "sdp": answer
+                            }
+                        }));
+                    })
+                }else if(json.event ==='answer'){
+                    Connection.setRemoteDescription(json.data.sdp);
+                    console.log(window.stream)
+                }
+            }
+        }
+    };
+}
+function sendMessage(){
+    dom=document.getElementById("chat-message-input")
+    websocket.send(JSON.stringify({"message":dom.value,"userid":null,"event":null,"data":null}))
+    dom.value= ""
+}
+    window.onLoad=f()
+</script>
+
+
+</body>
+
+</html>
+

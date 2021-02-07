@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>--聊天室--</title>
+</head>
+<body>
+
+<p>暂时为测试环境,请输入"lin"</p>
+<h style="text-align: center">请输入房间号:<input type="text" id="input_name" placeholder="lin" value="lin"><input type="submit" id="input_submit" onclick="newChat()" ></h>
+
+<script>
+    function newChat(){
+        var roomname=document.getElementById("input_name").value;
+        window.location.pathname ="/chat/room"+roomname+"/";
+    }
+
+</script>
+</body>
+</html>
